@@ -1,0 +1,478 @@
+/* ChefMate — Light Aesthetic Blue Theme */
+
+#chefmate-root {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  margin-left: 8px;
+  z-index: 9999;
+  color: #1a202c;
+}
+
+#chefmate-root.cm-floating {
+  position: fixed;
+  right: 20px;
+  top: 72px;
+  margin: 0;
+  z-index: 99999;
+}
+
+/* Master Toggle Button */
+.cm-toggle-btn {
+  border: 1px solid #c5dbf2;
+  border-radius: 20px;
+  background: #ffffff;
+  color: #0f3866;
+  cursor: pointer;
+  font: 600 13px/1 inherit;
+  padding: 8px 16px;
+  box-shadow: 0 2px 6px rgba(15, 56, 102, 0.08);
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cm-toggle-btn:hover {
+  background: #f0f7fe;
+  border-color: #9ac2ed;
+}
+
+.cm-toggle-btn.cm-active {
+  background: #1a73e8;
+  color: #ffffff;
+  border-color: #1a73e8;
+  box-shadow: 0 2px 8px rgba(26, 115, 232, 0.35);
+}
+
+/* Assistant Panel */
+.cm-panel {
+  position: absolute;
+  right: 0;
+  top: 44px;
+  width: 350px;
+  max-height: 82vh;
+  overflow-y: auto;
+  background: #ffffff;
+  color: #1f2937;
+  border: 1px solid #d2e3f5;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(15, 56, 102, 0.16);
+  padding: 14px;
+  z-index: 99999;
+  box-sizing: border-box;
+}
+
+/* Header */
+.cm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e5effa;
+  margin-bottom: 10px;
+}
+
+.cm-brand strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0c3b6d;
+}
+
+.cm-status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.cm-status-pill[data-kind="listening"] {
+  background: #e6f4ea;
+  color: #137333;
+}
+
+.cm-status-pill[data-kind="speaking"] {
+  background: #e8f0fe;
+  color: #1a73e8;
+}
+
+.cm-status-pill[data-kind="processing"],
+.cm-status-pill[data-kind="executing"] {
+  background: #fef7e0;
+  color: #b06000;
+}
+
+.cm-status-pill[data-kind="error"],
+.cm-status-pill[data-kind="off"] {
+  background: #fce8e6;
+  color: #c5221f;
+}
+
+.cm-close-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.cm-close-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+/* Video Title */
+.cm-video-title-row {
+  margin-bottom: 8px;
+}
+
+.cm-video-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+/* Recipe Container */
+.cm-recipe-section {
+  background: #f8fbfe;
+  border: 1px solid #e2edf8;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.cm-recipe-status {
+  font-size: 12px;
+  color: #475569;
+  margin-bottom: 6px;
+}
+
+.cm-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f3866;
+  margin: 6px 0 4px 0;
+}
+
+/* Ingredients List */
+.cm-ingredients-box {
+  margin-top: 6px;
+}
+
+/* Equipment Section */
+.cm-equipment-box {
+  margin-top: 6px;
+  margin-bottom: 6px;
+}
+
+.cm-equipment-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.cm-badge-eq {
+  background: #f0f4f9;
+  border: 1px solid #d5e3f0;
+  color: #1e293b;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.cm-ingredients-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 120px;
+  overflow-y: auto;
+  border: 1px solid #e0ecf7;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cm-ingredient-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 8px;
+  font-size: 12px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #1e293b;
+}
+
+.cm-ingredient-item:last-child {
+  border-bottom: none;
+}
+
+.cm-ing-name {
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+/* Badges */
+.cm-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.cm-badge-qty {
+  background: #e3effd;
+  color: #1255a6;
+}
+
+.cm-badge-unspecified {
+  background: #f1f5f9;
+  color: #64748b;
+  font-style: italic;
+}
+
+.cm-badge-time {
+  background: #edf6ff;
+  border: 1px solid #c5dbf2;
+  color: #1a73e8;
+  cursor: pointer;
+}
+
+.cm-badge-time:hover {
+  background: #1a73e8;
+  color: #ffffff;
+}
+
+/* Steps Box */
+.cm-steps-box {
+  margin-top: 8px;
+}
+
+.cm-steps-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cm-steps-progress {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1a73e8;
+}
+
+.cm-steps-list {
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.cm-step-card {
+  background: #ffffff;
+  border: 1px solid #e2edf8;
+  border-radius: 8px;
+  padding: 8px 10px;
+  transition: all 0.2s ease;
+}
+
+.cm-step-card.cm-step-active {
+  background: #f0f7fe;
+  border: 1.5px solid #1a73e8;
+  box-shadow: 0 2px 6px rgba(26, 115, 232, 0.12);
+}
+
+.cm-step-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.cm-step-number {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0f3866;
+}
+
+.cm-step-instruction {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #1e293b;
+  margin: 0;
+}
+
+.cm-step-meta-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.cm-meta-pill {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+/* Step Navigation Controls */
+.cm-step-controls {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* Buttons */
+.cm-btn {
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cm-btn-primary {
+  background: #1a73e8;
+  color: #ffffff;
+  flex: 1;
+}
+
+.cm-btn-primary:hover {
+  background: #1557b0;
+}
+
+.cm-btn-secondary {
+  background: #edf4fc;
+  color: #0f3866;
+  border: 1px solid #cce0f5;
+}
+
+.cm-btn-secondary:hover {
+  background: #dbeafc;
+}
+
+.cm-btn-accent {
+  background: #e8f0fe;
+  color: #1a73e8;
+  border: 1px solid #b3d1ff;
+  font-weight: 700;
+}
+
+.cm-btn-accent:hover {
+  background: #d2e3fc;
+}
+
+.cm-btn-outline {
+  background: #ffffff;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.cm-btn-outline:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+/* Voice Conversation Dialogue Box */
+.cm-voice-card {
+  background: #f8fbfe;
+  border: 1px solid #e0ecf7;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.cm-dialogue-row {
+  display: flex;
+  gap: 6px;
+  margin: 3px 0;
+}
+
+.cm-dialogue-label {
+  font-weight: 700;
+  color: #475569;
+  min-width: 60px;
+}
+
+.cm-dialogue-text {
+  color: #1e293b;
+  word-break: break-word;
+}
+
+.cm-assistant-reply {
+  color: #0f3866;
+  font-weight: 500;
+}
+
+/* Manual Input Form */
+.cm-manual-form {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.cm-manual-input {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  outline: none;
+}
+
+.cm-manual-input:focus {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
+}
+
+/* Actions Row */
+.cm-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.cm-actions-row .cm-btn {
+  font-size: 11px;
+  padding: 5px 8px;
+}
+
+/* Diagnostics */
+.cm-debug-toggle {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  margin-top: 4px;
+}
+
+.cm-debug-drawer {
+  background: #f1f5f9;
+  border-radius: 6px;
+  padding: 8px;
+  margin-top: 6px;
+  font-size: 10px;
+  font-family: ui-monospace, Consolas, monospace;
+  color: #334155;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
