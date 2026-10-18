@@ -128,13 +128,13 @@
     "whisk", "tongs", "pair of tongs", "frying pan", "pan", "skillet", "pot", "saucepan",
     "wok", "knife", "cutting board", "chopping board", "board", "mixing bowl", "bowl",
     "spatula", "baking sheet", "baking dish", "tray", "parchment paper", "aluminum foil",
-    "foil", "blender", "food processor", "strainer", "colander", "measuring cup",
-    "measuring spoon", "grater", "peeler", "thermometer", "kitchen scale", "scale",
-    "rolling pin", "ladle", "basting brush"
+    "foil", "blender", "food processor", "grinder", "mixer", "mixie", "spice grinder",
+    "strainer", "colander", "measuring cup", "measuring spoon", "grater", "peeler",
+    "thermometer", "kitchen scale", "scale", "rolling pin", "ladle", "basting brush"
   ].sort((a, b) => b.length - a.length);
 
   const equipmentActionRegex =
-    /^(?:take out|get|grab|bring|prepare|set out|arrange|place|put|lay out|need|use)\s+(?:a|an|the|your|some|pair of)?\s*(whisk|tongs|pair of tongs|frying pan|pan|skillet|pot|saucepan|wok|knife|cutting board|chopping board|mixing bowl|bowl|spatula|baking sheet|blender|strainer|grater|peeler|measuring cup|measuring spoon)/i;
+    /^(?:take out|get|grab|bring|prepare|set out|arrange|place|put|lay out|need|use)\s+(?:a|an|the|your|some|pair of)?\s*(whisk|tongs|pair of tongs|frying pan|pan|skillet|pot|saucepan|wok|knife|cutting board|chopping board|mixing bowl|bowl|spatula|baking sheet|blender|food processor|grinder|mixer|mixie|strainer|grater|peeler|measuring cup|measuring spoon)/i;
 
   const commentaryPatterns = [
     /welcome back to/i,
@@ -152,7 +152,97 @@
   ];
 
   const actionVerbsPattern =
-    /\b(add|pour|mix|whisk|stir|cook|heat|boil|fry|deep fry|saute|bake|roast|grill|chop|dice|slice|cut|mince|peel|season|sprinkle|spread|preheat|knead|roll|fold|drain|marinate|coat|flip|cool|serve|garnish|set aside|transfer|blend|melt|squeeze|braise|assemble|layer|press|microwave|refrigerate|toast|crack|beat|simmer|combine|remove|take off the heat)\b/i;
+    /\b(add|pour|mix|whisk|stir|cook|heat|boil|fry|deep fry|saute|bake|roast|grill|chop|dice|slice|cut|mince|peel|season|sprinkle|spread|preheat|knead|roll|fold|drain|marinate|coat|flip|cool|serve|garnish|set aside|transfer|blend|grind|coarsely grind|finely grind|puree|process|crush|melt|squeeze|braise|assemble|layer|press|microwave|refrigerate|toast|crack|beat|simmer|combine|remove|take off the heat)\b/i;
+
+  const culinaryIdiomsRegex =
+    /\b(let (?:him|them|her|me) cook|cooked that guy|cook up a (?:storm|beat|plan|scheme)|heat of the moment|cool (?:down|off) (?:the situation|bro|guys)|flip the (?:script|switch)|roll with (?:it|the punches)|piece of cake|cup of tea|spill the (?:beans|tea)|bring home the bacon|bad apple|tough cookie|in a pickle|bite the bullet|butter (?:someone )?up|take it with a grain of salt)\b/i;
+
+  const nonCookingPhrases = [
+    /\b(?:subscribe to (?:the |my )?channel|hit that (?:like|bell)|link in description|comment below)\b/i,
+    /\b(?:in today's video we are (?:playing|testing|reviewing|checking out))\b/i,
+    /\b(?:headshot|kill streak|respawn|boss fight|checkpoint|inventory slots|high score|game over|gameplay)\b/i,
+    /\b(?:in theaters|box office|directed by|starring in|streaming on|full episode)\b/i,
+    /\b(?:unboxing the new|specs of this|battery life|benchmark test)\b/i,
+    /\b(?:workout routine|reps of|sets of|cardio burn)\b/i
+  ];
+
+  const reviewTranscriptPhrases = [
+    /\b(?:this tastes|it tastes|tastes like|so delicious|super delicious|incredibly delicious|tastes amazing)\b/i,
+    /\b(?:the texture is|crispy texture|soft texture|chewy texture|melt in your mouth|melts in your mouth)\b/i,
+    /\b(?:10 out of 10|ten out of ten|\b[1-9]\/10\b|i give this a|my rating is|rating this|stars out of 5)\b/i,
+    /\b(?:the service was|the waiter|the waitress|the staff|the atmosphere|the ambiance|the decor)\b/i,
+    /\b(?:it costs|the price is|worth the price|worth the money|dollars per serving|bill came out to|we paid)\b/i,
+    /\b(?:highly recommend visiting|definitely come here|if you are ever in|when you visit)\b/i,
+    /\b(?:take a bite|first bite|another bite|let's taste this|let's try this|eating this|look at that bite)\b/i,
+    /\b(?:best burger|best pizza|best sandwich|best taco|favorite restaurant|best restaurant)\b/i
+  ];
+
+  const foodReviewTitleRegex =
+    /\b(?:mukbang|food review|eating show|restaurant review|trying every|tasting every|street food tour|food crawl|taste test|eating everything|cheapest vs most expensive|eating at|we visited|dining at|michelin star restaurant review|best burger in|food tasting|asmr eating|eating challenge|food truck tour|food vlog)\b/i;
+
+  const nonCookingTranscriptRegex =
+    /\b(?:headshot|kill streak|respawn|boss fight|checkpoint|inventory slots|high score|game over|press enter|album drops|in theaters now|box office)\b/i;
+
+  function isStrongNonCookingTitle(title) {
+    if (!title || typeof title !== "string") return false;
+    return (
+      /\b(?:gameplay|playthrough|walkthrough|lets play|let's play|gaming|minecraft|fortnite|roblox|gta\s*[v5]|call of duty|warzone|valorant|apex legends|elden ring|pokemon|nintendo|playstation|xbox|speedrun|twitch|streamer)\b/i.test(title) ||
+      /\b(?:official music video|official video|official audio|lyric video|music video|full album|soundtrack|ost|remix|acoustic version|live performance|cover song)\b/i.test(title) ||
+      /\b(?:official trailer|teaser trailer|movie trailer|trailer \d|final trailer|film clip|season \d+ episode \d+|bloopers|behind the scenes)\b/i.test(title) ||
+      /\b(?:comedy sketch|standup comedy|stand-up comedy|meme compilation|try not to laugh|prank|dank memes)\b/i.test(title) ||
+      /\b(?:unboxing|review & unboxing|hands on review|specs|benchmark|battery test|iphone \d+|samsung galaxy|rtx \d+|gpu review|laptop review)\b/i.test(title) ||
+      /\b(?:workout routine|ab workout|chest workout|fat burn|cardio workout|fitness routine|hiit workout|gym workout|bicep curls)\b/i.test(title) ||
+      /\b(?:breaking news|press conference|white house|senate hearing|lecture \d|university lecture|keynote speech)\b/i.test(title)
+    );
+  }
+
+  function isInstructionalCookingStep(text) {
+    if (!text || typeof text !== "string") return false;
+    const clean = text.trim();
+    if (clean.length < 8) return false;
+
+    // Filter out commentary and channel meta
+    if (commentaryPatterns.some(p => p.test(clean))) return false;
+    if (nonCookingPhrases.some(p => p.test(clean))) return false;
+    if (culinaryIdiomsRegex.test(clean)) return false;
+    if (reviewTranscriptPhrases.some(p => p.test(clean))) return false;
+
+    // Check for cooking action verb
+    const match = clean.match(actionVerbsPattern);
+    if (!match) return false;
+
+    // Reject non-culinary idioms
+    if (/\b(?:flip the (?:switch|script)|press (?:enter|the button|play|pause)|roll (?:down|over|up the window)|cool (?:down|off) (?:the situation)|remove the (?:item|battery|enemy)|take off the (?:shoes|shirt|jacket))\b/i.test(clean)) {
+      return false;
+    }
+
+    // Must have culinary context:
+    // 1) An ingredient mention
+    const hasIngredient = knownIngredients.some(ing => {
+      const re = new RegExp(`\\b${ing}s?\\b`, "i");
+      return re.test(clean);
+    });
+
+    // 2) Cooking equipment / vessel
+    const hasEquipment = equipmentKeywords.some(eq => {
+      const re = new RegExp(`\\b${eq}\\b`, "i");
+      return re.test(clean);
+    });
+
+    // 3) Cooking conditions / methods / temperatures / durations
+    const hasCookingCondition = /\b(?:(?:medium|low|high)\s+heat|golden brown|until fragrant|until translucent|until crispy|until tender|until melted|until smooth|until thickened|preheat|oven to|degrees|fahrenheit|celsius|skillet|pan|pot|bowl|baking sheet|tray|casserole|simmer|boil|saut[eé]|fry|bake|roast|grind|grinding|puree|process|coarsely|finely|smooth paste|timer|seconds|minutes|hours)\b/i.test(clean);
+
+    // 4) Measurements
+    const hasMeasurement = /\b(?:\d+|half|quarter|one|two|three|tablespoon|teaspoon|cup|pinch|grams?|ml|liter|clove|slice)s?\b/i.test(clean);
+
+    // 5) Explicit culinary instructional phrase
+    const hasCulinaryInstruction = /\b(?:season with|garnish with|drizzle with|sprinkle with|serve hot|set aside|let it rest|whisk together|stir well|bring to a boil|reduce the heat|toss to coat|fold in)\b/i.test(clean);
+
+    // 6) Direct imperative cooking preparation (e.g. "coarsely grind", "finely grind", "blend well")
+    const isDirectPrepCommand = /^(?:coarsely|finely|smoothly)?\s*(?:grind|blend|chop|slice|dice|whisk|puree|crush)\b/i.test(clean);
+
+    return hasIngredient || hasEquipment || hasCookingCondition || hasMeasurement || hasCulinaryInstruction || isDirectPrepCommand;
+  }
 
   function parseQuantity(raw) {
     if (!raw) return { quantity: null, unit: null, rawUnit: null, specified: false };
@@ -444,7 +534,7 @@
       }
 
       // 2. Check if this is an actual cooking or ingredient action
-      const hasAction = actionVerbsPattern.test(text);
+      const hasAction = isInstructionalCookingStep(text);
       if (hasAction) {
         if (stats) stats.candidate_step_count++;
         const startSec = Number(seg.start || 0);
@@ -608,7 +698,7 @@
 
   // --- Main Extractor Interface ---
   const recipeExtractor = {
-    extract({ videoId = "", videoTitle = "", videoDuration = 0, description = "", segments = [] } = {}) {
+    extract({ videoId = "", videoTitle = "", videoDuration = 0, description = "", segments = [], ocrRecords = [], visualObservations = [] } = {}) {
       const warnings = [];
       const equipment = [];
       const stats = {
@@ -632,16 +722,57 @@
       const descIngs = parseDescriptionIngredients(description);
       const transcriptText = Array.isArray(segments) ? segments.map(s => s.text).join(" ") : "";
       const transIngs = parseTranscriptIngredients(transcriptText);
-      const finalIngredients = reconcileIngredients(descIngs, transIngs, warnings);
+      let finalIngredients = reconcileIngredients(descIngs, transIngs, warnings);
 
       // 2. Steps & Equipment extraction
       const transSteps = extractStepsFromTranscript(segments, equipment, stats);
       const descSteps = extractStepsFromDescription(description, equipment);
-      const finalSteps = reconcileSteps(descSteps, transSteps);
+      let finalSteps = reconcileSteps(descSteps, transSteps);
 
-      // Fallback notifications
-      if (finalIngredients.length === 0) {
-        warnings.push("No explicit ingredient list was found in video description or subtitles.");
+      // 3. Multi-modal Visual OCR & Computer Vision Reconciliation
+      if ((Array.isArray(ocrRecords) && ocrRecords.length > 0) || (Array.isArray(visualObservations) && visualObservations.length > 0)) {
+        const reconcileFn = CM.visualExtractor?.reconcileMultimodalEvidence || CM.visualExtractor?.reconcileTranscriptAndOCR;
+        if (typeof reconcileFn === "function") {
+          const reconciled = reconcileFn({
+            transcriptIngredients: finalIngredients,
+            transcriptSteps: finalSteps,
+            ocrRecords: ocrRecords || [],
+            visualObservations: visualObservations || [],
+            warnings
+          });
+          finalIngredients = reconciled.ingredients;
+          finalSteps = reconciled.steps;
+        }
+      }
+
+      // 4. Prerequisite-Aware Recipe Planning & Dependency Graph
+      let prerequisiteNotice = null;
+      let prerequisites = [];
+      if (CM.recipePlanner?.buildDependencyAwarePlan && finalSteps.length > 0) {
+        try {
+          const planned = CM.recipePlanner.buildDependencyAwarePlan(finalSteps, finalIngredients);
+          finalSteps = planned.orderedSteps;
+          prerequisiteNotice = planned.prerequisiteNotice;
+          prerequisites = planned.prerequisites;
+        } catch (planErr) {
+          console.warn("[RECIPE] Prerequisite planning warning:", planErr);
+        }
+      }
+
+      // Fallback notifications & explicit unknown quantity handling
+      if (finalIngredients.length === 0 && finalSteps.length > 0) {
+        finalIngredients.push({
+          name: "Ingredients shown in video",
+          quantity: null,
+          unit: null,
+          quantity_specified: false,
+          sources: ["visual"],
+          confidence: 0.75,
+          notes: "Quantities not specified in video."
+        });
+        warnings.push("No explicit ingredient list was found; ingredients and quantities are unspecified.");
+      } else if (finalIngredients.length === 0) {
+        warnings.push("No explicit ingredient list was found in video description, subtitles, or on-screen text.");
       }
       if (finalSteps.length === 0) {
         warnings.push("No structured cooking steps could be recognized.");
@@ -650,7 +781,7 @@
       const specifiedCount = finalIngredients.filter(i => i.quantity_specified).length;
       const unspecifiedCount = finalIngredients.length - specifiedCount;
 
-      const success = finalIngredients.length > 0 || finalSteps.length > 0;
+      const success = finalSteps.length > 0;
 
       return {
         success,
@@ -659,6 +790,10 @@
         equipment,
         ingredients: finalIngredients,
         steps: finalSteps,
+        prerequisiteNotice,
+        prerequisites,
+        has_prerequisites: prerequisites.length > 0,
+        dual_timeline: true,
         warnings,
         stats: {
           ...stats,
@@ -666,6 +801,7 @@
           specified_quantities_count: specifiedCount,
           unspecified_quantities_count: unspecifiedCount,
           steps_count: finalSteps.length,
+          prerequisites_count: prerequisites.length,
           equipment_count: equipment.length,
           has_transcript: segments && segments.length > 0,
           has_description: Boolean(description && description.length > 20)
@@ -786,6 +922,210 @@
       return practicalQuantitySuggestions[key] || null;
     },
 
+    classifyVideo({
+      title = "",
+      description = "",
+      segments = [],
+      videoDuration = 0,
+      transcriptResult = null,
+      ocrRecords = [],
+      visualObservations = []
+    } = {}) {
+      const cleanTitle = cleanText(title);
+      const cleanDesc = cleanText(description);
+      const segList = Array.isArray(segments) ? segments : [];
+      const duration = Number.isFinite(videoDuration) ? videoDuration : 0;
+
+      // 1. Check description for structured recipe (ingredients + steps)
+      const descHasIngredients = /^(?:ingredients?|what you(?:'ll| will) need|shopping list)[:\s]/im.test(cleanDesc);
+      const descHasSteps = /^(?:instructions?|directions?|method|steps?|preparation)[:\s]/im.test(cleanDesc) ||
+        /\b(?:step\s*1|1\.)\s+[A-Za-z]/i.test(cleanDesc);
+      const descStructuredRecipe = Boolean(descHasIngredients && descHasSteps);
+
+      // 2. Missing transcript
+      if (segList.length === 0) {
+        if (descStructuredRecipe) {
+          return {
+            category: "COOKING_TUTORIAL",
+            confidence: 0.85,
+            reason: "Description contains a complete structured recipe with ingredients and preparation steps.",
+            details: { hasStructuredRecipeInDesc: true, segCount: 0 }
+          };
+        }
+        // Check if on-screen visual OCR or visual actions provide cooking instructions or actions
+        const ocrIngs = (Array.isArray(ocrRecords) ? ocrRecords : []).filter(r => r.classification === "INGREDIENT");
+        const ocrSteps = (Array.isArray(ocrRecords) ? ocrRecords : []).filter(r => r.classification === "COOKING_INSTRUCTION");
+        const visObs = (Array.isArray(visualObservations) ? visualObservations : []).filter(v => (v.confidence || 0) >= 0.70);
+
+        const hasVisualRecipeEvidence = ocrSteps.length >= 1 || visObs.length >= 1 || ocrIngs.length >= 2 ||
+          (ocrIngs.length >= 1 && (ocrSteps.length >= 1 || visObs.length >= 1));
+
+        const isCookingTitle = /\b(?:recipes?|cooking|how to (?:cook|make|bake|prepare)|breakfast|lunch|dinner|meal|curry|pasta|soup|salad|dessert|cake|bread|kitchen|dish|pancake|omelet|smoothie)\b/i.test(cleanTitle);
+
+        if (hasVisualRecipeEvidence || (isCookingTitle && (ocrRecords.length > 0 || visualObservations.length > 0))) {
+          return {
+            category: "COOKING_TUTORIAL",
+            confidence: 0.90,
+            reason: "Verified cooking tutorial from clear on-screen visual instructions or visual cooking actions.",
+            details: { hasVisualRecipeCard: true, ocrIngredients: ocrIngs.length, ocrSteps: ocrSteps.length, visualObservations: visObs.length }
+          };
+        }
+        if (isStrongNonCookingTitle(cleanTitle)) {
+          return {
+            category: "NON_COOKING",
+            confidence: 0.95,
+            reason: "Title indicates non-cooking entertainment content and no transcript is available.",
+            details: { segCount: 0 }
+          };
+        }
+        return {
+          category: "INSUFFICIENT_EVIDENCE",
+          confidence: 0.90,
+          reason: "Transcript/subtitles are not available for this video and description contains no recipe.",
+          details: { segCount: 0 }
+        };
+      }
+
+      // 3. Transcript metadata & coverage
+      const totalWords = segList.map(s => s.text || "").join(" ").trim().split(/\s+/).filter(Boolean).length;
+      const firstTimestamp = segList.length > 0 ? Number(segList[0].start || 0) : 0;
+      const lastTimestamp = segList.length > 0 ? Number(segList[segList.length - 1].start || 0) : 0;
+      const transcriptTimeSpan = lastTimestamp - firstTimestamp;
+
+      // Detect incomplete / intro-only transcript
+      const isIntroOnly = (duration > 60 && lastTimestamp <= 35 && segList.length <= 6) ||
+        (duration > 90 && transcriptTimeSpan < 25 && totalWords < 45);
+
+      // 4. Feature extraction
+      const candidateSteps = [];
+      const mentionedIngredients = new Set();
+      const mentionedEquipment = new Set();
+      let reviewSignalCount = 0;
+      let nonCookingSignalCount = 0;
+
+      if (foodReviewTitleRegex.test(cleanTitle)) {
+        reviewSignalCount += 3;
+      }
+      if (isStrongNonCookingTitle(cleanTitle)) {
+        nonCookingSignalCount += 3;
+      }
+
+      for (const seg of segList) {
+        const text = seg.text || "";
+        if (!text) continue;
+
+        if (isInstructionalCookingStep(text)) {
+          candidateSteps.push(text);
+        }
+
+        for (const ing of knownIngredients) {
+          if (new RegExp(`\\b${ing}s?\\b`, "i").test(text)) {
+            mentionedIngredients.add(ing.toLowerCase().replace(/s$/, ""));
+          }
+        }
+
+        for (const eq of equipmentKeywords) {
+          if (new RegExp(`\\b${eq}\\b`, "i").test(text)) {
+            mentionedEquipment.add(eq.toLowerCase());
+          }
+        }
+
+        if (reviewTranscriptPhrases.some(p => p.test(text))) {
+          reviewSignalCount++;
+        }
+
+        if (nonCookingTranscriptRegex.test(text)) {
+          nonCookingSignalCount++;
+        }
+      }
+
+      const instructionalStepCount = candidateSteps.length;
+      const ingredientCount = mentionedIngredients.size;
+
+      // 5. Strong non-cooking content (gaming, trailer, music, tech, workout, comedy)
+      if ((isStrongNonCookingTitle(cleanTitle) || nonCookingSignalCount >= 2) && instructionalStepCount < 3) {
+        return {
+          category: "NON_COOKING",
+          confidence: 0.95,
+          reason: "Video contains gaming, entertainment, music, or other non-cooking content without recipe instructions.",
+          details: { nonCookingSignalCount, instructionalStepCount, ingredientCount }
+        };
+      }
+
+      // 6. Food-related non-tutorial (review, mukbang, restaurant vlog, tasting)
+      if ((reviewSignalCount >= 3 || (reviewSignalCount >= 1 && foodReviewTitleRegex.test(cleanTitle))) && instructionalStepCount < 3) {
+        return {
+          category: "FOOD_RELATED_NON_TUTORIAL",
+          confidence: 0.92,
+          reason: "Video is a food review, restaurant vlog, tasting, or eating video without cooking instructions.",
+          details: { reviewSignalCount, instructionalStepCount, ingredientCount }
+        };
+      }
+
+      // 7. Incomplete intro-only transcript without steps
+      if (isIntroOnly && instructionalStepCount === 0) {
+        return {
+          category: "INSUFFICIENT_EVIDENCE",
+          confidence: 0.88,
+          reason: "Transcript is incomplete and contains only an introduction without recipe instructions.",
+          details: { isIntroOnly: true, lastTimestamp, totalWords, instructionalStepCount }
+        };
+      }
+
+      // 8. Food discussion / nutrition talk without cooking preparation steps
+      if (ingredientCount >= 3 && instructionalStepCount < 2 && !descStructuredRecipe) {
+        return {
+          category: "FOOD_RELATED_NON_TUTORIAL",
+          confidence: 0.88,
+          reason: "Video discusses food or ingredients, but does not provide a step-by-step cooking procedure.",
+          details: { ingredientCount, instructionalStepCount }
+        };
+      }
+
+      // 9. Zero instructional steps
+      if (instructionalStepCount === 0 && !descStructuredRecipe) {
+        const isFoodFocused = /food|restaurant|eating|tasting|review|mukbang|nutrition|diet|meal|burger|pizza|sandwich|dessert|coffee|wine|steak|ramen|pasta|sushi|culinary|chef|bistro|kitchen/i.test(cleanTitle + " " + cleanDesc) || reviewSignalCount >= 1;
+        if (isFoodFocused) {
+          return {
+            category: "FOOD_RELATED_NON_TUTORIAL",
+            confidence: 0.82,
+            reason: "Mentions food or cooking terms casually, but contains no actual cooking tutorial or recipe instructions.",
+            details: { ingredientCount, instructionalStepCount }
+          };
+        }
+        return {
+          category: "NON_COOKING",
+          confidence: 0.95,
+          reason: "No cooking instructions or recipe content found in video.",
+          details: { instructionalStepCount, ingredientCount }
+        };
+      }
+
+      // 10. Cooking tutorial verified
+      if (instructionalStepCount >= 2 || (instructionalStepCount >= 1 && (ingredientCount >= 1 || descStructuredRecipe))) {
+        const confidence = Math.min(0.98, 0.75 + (instructionalStepCount * 0.04) + (ingredientCount * 0.02));
+        return {
+          category: "COOKING_TUTORIAL",
+          confidence: Number(confidence.toFixed(2)),
+          reason: `Verified cooking tutorial with ${instructionalStepCount} preparation instructions and ${ingredientCount} ingredients.`,
+          details: {
+            instructionalStepCount,
+            ingredientCount,
+            reviewSignalCount,
+            nonCookingSignalCount,
+            hasStructuredRecipeInDesc: descStructuredRecipe
+          }
+        };
+      }
+
+      return {
+        category: "INSUFFICIENT_EVIDENCE",
+        confidence: 0.70,
+        reason: "Insufficient cooking preparation instructions found to generate a reliable recipe.",
+        details: { instructionalStepCount, ingredientCount }
+      };
+    },
+
     // Helper functions exposed for direct testing
     _parseQuantity: parseQuantity,
     _extractDuration: extractDuration,
@@ -793,7 +1133,9 @@
     _extractDoneness: extractDoneness,
     _classifyEquipmentMention: classifyEquipmentMention,
     _parseDescriptionIngredients: parseDescriptionIngredients,
-    _extractStepsFromTranscript: extractStepsFromTranscript
+    _extractStepsFromTranscript: extractStepsFromTranscript,
+    _isInstructionalCookingStep: isInstructionalCookingStep,
+    _isStrongNonCookingTitle: isStrongNonCookingTitle
   };
 
   CM.recipeExtractor = recipeExtractor;

@@ -179,6 +179,10 @@
       debugBox.hidden = true;
       debugBox.innerHTML = `
         <div>State: <span id="cm-dbg-state">IDLE</span></div>
+        <div>Transcript: <span id="cm-dbg-src-transcript">Unavailable</span></div>
+        <div>OCR: <span id="cm-dbg-src-ocr">Unavailable</span></div>
+        <div>Vision: <span id="cm-dbg-src-vision">Unavailable</span></div>
+        <div>Metadata: <span id="cm-dbg-src-metadata">Unavailable</span></div>
         <div>Coverage: <span id="cm-dbg-coverage">—</span></div>
         <div>Segments: <span id="cm-dbg-segments">0</span></div>
         <div>Timestamps: <span id="cm-dbg-timestamps">0s - 0s</span></div>
@@ -329,7 +333,10 @@
             const nameSpan = el("span", "cm-ing-name", ing.name);
 
             let qtyBadge;
-            if (ing.quantity_specified && ing.quantity) {
+            if (ing.has_conflict || ing.quantity_uncertain) {
+              qtyBadge = el("span", "cm-badge cm-badge-conflict", "⚠️ uncertain / conflicting");
+              qtyBadge.title = ing.conflict_details || "Conflicting quantities between transcript and on-screen text";
+            } else if (ing.quantity_specified && ing.quantity) {
               const u = ing.unit ? ` ${ing.unit}` : "";
               qtyBadge = el("span", "cm-badge cm-badge-qty", `${ing.quantity}${u}`);
             } else {
@@ -359,9 +366,18 @@
             const stepNum = el("span", "cm-step-number", `Step ${step.step_number}`);
             headerRow.append(stepNum);
 
-            if (step.time_formatted) {
-              const timeBadge = el("button", "cm-badge cm-badge-time", `⏱ ${step.time_formatted}`);
-              timeBadge.title = "Jump video to this step";
+            if (step.is_prerequisite) {
+              const prereqBadge = el("span", "cm-badge cm-badge-prereq", "⏳ In Advance");
+              headerRow.append(prereqBadge);
+            }
+
+            const formattedTime = step.time_formatted || (typeof step.start_seconds === "number" && step.start_seconds > 0
+              ? `${Math.floor(step.start_seconds / 60)}:${String(Math.floor(step.start_seconds % 60)).padStart(2, "0")}`
+              : null);
+
+            if (formattedTime) {
+              const timeBadge = el("button", "cm-badge cm-badge-time", `⏱ ${formattedTime}`);
+              timeBadge.title = "Jump video to when this step is shown";
               timeBadge.addEventListener("click", () => {
                 if (typeof step.start_seconds === "number") {
                   CM.youtubeController.seekTo(step.start_seconds);
@@ -373,16 +389,21 @@
             const instructionP = el("p", "cm-step-instruction", step.instruction);
             card.append(headerRow, instructionP);
 
-            if (step.duration_seconds || step.temperature || step.doneness_cue) {
+            if (step.duration_seconds || step.temperature || step.doneness_cue || step.can_parallel) {
               const pillsRow = el("div", "cm-step-meta-row");
               if (step.duration_seconds) {
                 pillsRow.append(el("span", "cm-meta-pill", `⏳ ${Math.round(step.duration_seconds / 60)}m`));
+              } else if (step.duration_text && step.duration_text !== "unspecified") {
+                pillsRow.append(el("span", "cm-meta-pill", `⏳ ${step.duration_text}`));
               }
               if (step.temperature) {
                 pillsRow.append(el("span", "cm-meta-pill", `🌡 ${step.temperature}`));
               }
               if (step.doneness_cue) {
                 pillsRow.append(el("span", "cm-meta-pill", `👁 ${step.doneness_cue}`));
+              }
+              if (step.can_parallel) {
+                pillsRow.append(el("span", "cm-meta-pill cm-meta-parallel", "⚡ Can parallel"));
               }
               card.append(pillsRow);
             }
@@ -444,6 +465,27 @@
       this.updateDebug();
     },
 
+    sourceStatuses: {
+      transcript: "Unavailable",
+      ocr: "Unavailable",
+      vision: "Unavailable",
+      metadata: "Unavailable"
+    },
+
+    setSourceStatuses(statuses = {}) {
+      if (!statuses) return;
+      this.sourceStatuses = { ...this.sourceStatuses, ...statuses };
+      const trNode = this.panel?.querySelector("#cm-dbg-src-transcript");
+      const ocrNode = this.panel?.querySelector("#cm-dbg-src-ocr");
+      const visNode = this.panel?.querySelector("#cm-dbg-src-vision");
+      const metaNode = this.panel?.querySelector("#cm-dbg-src-metadata");
+
+      if (trNode && this.sourceStatuses.transcript) trNode.textContent = this.sourceStatuses.transcript;
+      if (ocrNode && this.sourceStatuses.ocr) ocrNode.textContent = this.sourceStatuses.ocr;
+      if (visNode && this.sourceStatuses.vision) visNode.textContent = this.sourceStatuses.vision;
+      if (metaNode && this.sourceStatuses.metadata) metaNode.textContent = this.sourceStatuses.metadata;
+    },
+
     updateDebug() {
       const stateNode = this.panel?.querySelector("#cm-dbg-state");
       const micNode = this.panel?.querySelector("#cm-dbg-mic");
@@ -454,6 +496,16 @@
 
       if (stateNode) stateNode.textContent = CM.assistant?.state || "IDLE";
       if (micNode) micNode.textContent = CM.voice?.stream?.active ? "CONNECTED" : "NOT CONNECTED";
+
+      const trNode = this.panel?.querySelector("#cm-dbg-src-transcript");
+      const ocrNode = this.panel?.querySelector("#cm-dbg-src-ocr");
+      const visNode = this.panel?.querySelector("#cm-dbg-src-vision");
+      const metaNode = this.panel?.querySelector("#cm-dbg-src-metadata");
+
+      if (trNode && this.sourceStatuses?.transcript) trNode.textContent = this.sourceStatuses.transcript;
+      if (ocrNode && this.sourceStatuses?.ocr) ocrNode.textContent = this.sourceStatuses.ocr;
+      if (visNode && this.sourceStatuses?.vision) visNode.textContent = this.sourceStatuses.vision;
+      if (metaNode && this.sourceStatuses?.metadata) metaNode.textContent = this.sourceStatuses.metadata;
 
       const stats = CM.assistant?.currentRecipe?.stats;
       if (stats) {

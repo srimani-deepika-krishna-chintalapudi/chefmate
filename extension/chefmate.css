@@ -252,6 +252,24 @@
   color: #ffffff;
 }
 
+.cm-badge-conflict {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.cm-badge-prereq {
+  background: #f3e8ff;
+  color: #7e22ce;
+  border: 1px solid #e9d5ff;
+}
+
+.cm-meta-parallel {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
 /* Steps Box */
 .cm-steps-box {
   margin-top: 8px;

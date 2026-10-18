@@ -13,6 +13,7 @@
       this.currentRecipe = null;
       this.currentStepIndex = 0;
       this.currentVideoId = newVideoId;
+      CM.visualExtractor?.cancel();
       CM.voice?.stopSpeaking();
       CM.ui?.resetRecipe();
     },
@@ -20,7 +21,7 @@
     async generateRecipe() {
       console.log('[CHEFMATE FLOW] State changed: -> ANALYZING');
       this.state = "ANALYZING";
-      CM.ui?.setRecipeStatus("Analyzing complete video description and subtitles…");
+      CM.ui?.setRecipeStatus("Analyzing video");
       console.debug("[CHEFMATE] generateRecipe() started");
 
       const videoInfo = CM.youtubeController.currentVideo();
@@ -28,11 +29,14 @@
       const videoElement = document.querySelector("video");
       const videoDuration = videoElement && Number.isFinite(videoElement.duration) ? videoElement.duration : 0;
 
+      // Ensure any pending speech is cancelled
+      CM.voice?.stopSpeaking();
+
       // 1. Fetch complete transcript segments across entire video
       let segments = [];
+      let transcriptResult = null;
       try {
         console.debug("[CHEFMATE] Fetching transcript…");
-        let transcriptResult = null;
         if (CM.recipeExtractor && typeof CM.recipeExtractor.subtitleSweep === "function") {
           transcriptResult = await CM.recipeExtractor.subtitleSweep(videoElement);
         } else if (CM.transcriptExtractor && typeof CM.transcriptExtractor.getSegments === "function") {
@@ -46,27 +50,141 @@
         console.warn("[CHEFMATE] Transcript extraction warning:", err);
       }
 
-      // 2. Extract and reconcile complete recipe
+      // 2. Perform Visual OCR and Computer Vision Analysis on video frames
+      let ocrRecords = [];
+      let visualObservations = [];
+      let visualResult = null;
+      try {
+        if (CM.visualExtractor && typeof CM.visualExtractor.extractVisualRecipe === "function") {
+          visualResult = await CM.visualExtractor.extractVisualRecipe({
+            videoElement,
+            videoInfo,
+            videoDuration
+          });
+          if (visualResult && visualResult.success) {
+            if (Array.isArray(visualResult.records)) {
+              ocrRecords = visualResult.records;
+            }
+            if (Array.isArray(visualResult.visualObservations)) {
+              visualObservations = visualResult.visualObservations;
+            }
+            console.debug("[CHEFMATE] Visual records:", ocrRecords.length, "Visual CV observations:", visualObservations.length);
+          }
+        }
+      } catch (ocrErr) {
+        console.warn("[CHEFMATE] Visual analysis warning (failing safely):", ocrErr);
+      }
+
+      // 3. Classify video before any recipe extraction (using Transcript + Visual OCR + CV)
+      let classification = null;
+      try {
+        if (CM.recipeExtractor && typeof CM.recipeExtractor.classifyVideo === "function") {
+          classification = CM.recipeExtractor.classifyVideo({
+            title: videoInfo.title,
+            description: videoInfo.description,
+            segments,
+            videoDuration,
+            transcriptResult,
+            ocrRecords,
+            visualObservations
+          });
+        }
+      } catch (classErr) {
+        console.warn("[CHEFMATE] Video classification error (failing safely):", classErr);
+        classification = {
+          category: "INSUFFICIENT_EVIDENCE",
+          confidence: 0,
+          reason: "Classifier encountered an internal error."
+        };
+      }
+
+      if (!classification) {
+        classification = {
+          category: (segments && segments.length > 5) || (ocrRecords && ocrRecords.length > 2) || (visualObservations && visualObservations.length > 1) ? "COOKING_TUTORIAL" : "INSUFFICIENT_EVIDENCE",
+          confidence: 0.5,
+          reason: "Fallback evaluation"
+        };
+      }
+
+      console.log(`[CHEFMATE FLOW] Video classified: category=${classification.category} | confidence=${classification.confidence} | reason="${classification.reason}"`);
+
+      // 4. FAIL SAFELY if video is not a verified cooking tutorial
+      if (classification.category !== "COOKING_TUTORIAL" && classification.category !== "COOKING_CONFIRMED") {
+        this.state = "IDLE";
+        this.currentRecipe = null;
+        this.currentStepIndex = 0;
+        CM.ui?.resetRecipe();
+        CM.voice?.stopSpeaking();
+
+        let uiStatus = "Not a cooking tutorial";
+        let message = "This doesn't appear to be a cooking tutorial. Please open a cooking or recipe video to use ChefMate.";
+
+        if (classification.category === "FOOD_RELATED_NON_TUTORIAL" || classification.category === "FOOD_RELATED_NO_RECIPE") {
+          uiStatus = "Food-related but no usable instructions";
+          message = "This video is related to food, but it doesn't contain enough cooking instructions to generate a reliable recipe.";
+        } else if (classification.category === "INSUFFICIENT_EVIDENCE") {
+          uiStatus = "Insufficient transcript or evidence";
+          message = "I couldn't verify that this video contains a usable recipe. Please check the subtitles or try another cooking video.";
+        }
+
+        CM.ui?.setRecipeStatus(uiStatus);
+
+        return {
+          success: false,
+          action: "GENERATE_RECIPE",
+          category: classification.category,
+          reason: classification.reason,
+          message,
+          speak: true
+        };
+      }
+
+      // 5. Confirmed cooking tutorial: update UI status
+      CM.ui?.setRecipeStatus("Cooking tutorial verified");
+
+      // Track independent source statuses
+      const sourceStatuses = {
+        transcript: segments && segments.length > 0 ? "COMPLETED" : (transcriptResult?.error ? "FAILED" : "UNAVAILABLE"),
+        ocr: ocrRecords && ocrRecords.length > 0 ? "COMPLETED" : (visualResult?.warnings?.length ? "FAILED" : "UNAVAILABLE"),
+        vision: visualObservations && visualObservations.length > 0 ? "COMPLETED" : "UNAVAILABLE",
+        metadata: videoInfo?.title ? "COMPLETED" : "UNAVAILABLE"
+      };
+      if (typeof CM.ui?.setSourceStatuses === "function") {
+        CM.ui.setSourceStatuses(sourceStatuses);
+      }
+
+      // 6. Extract and reconcile complete recipe (Transcript + Description + Visual OCR + CV)
       const recipe = CM.recipeExtractor.extract({
         videoId: videoInfo.id,
         videoTitle: videoInfo.title,
         videoDuration,
         description: videoInfo.description,
-        segments
+        segments,
+        ocrRecords,
+        visualObservations
       });
 
       console.debug("[CHEFMATE] recipe.success:", recipe.success,
         "| ingredients:", recipe.ingredients?.length,
         "| steps:", recipe.steps?.length);
 
-      if (!recipe.success || (recipe.ingredients.length === 0 && recipe.steps.length === 0)) {
-        this.state = "ERROR";
-        console.log('[CHEFMATE FLOW] State changed: -> ERROR');
-        CM.ui?.setRecipeStatus("Could not extract a cooking recipe from this video.");
+      // Validate extracted evidence: Must have actual usable cooking steps
+      if (!recipe.success || !recipe.steps || recipe.steps.length === 0) {
+        this.state = "IDLE";
+        this.currentRecipe = null;
+        this.currentStepIndex = 0;
+        CM.ui?.resetRecipe();
+        CM.voice?.stopSpeaking();
+
+        const uiStatus = "Food-related but no usable instructions";
+        const message = "This video is related to food, but it doesn't contain enough cooking instructions to generate a reliable recipe.";
+        CM.ui?.setRecipeStatus(uiStatus);
+
         return {
           success: false,
           action: "GENERATE_RECIPE",
-          message: "I could not find a clear recipe in this video's description or transcript.",
+          category: "FOOD_RELATED_NON_TUTORIAL",
+          message,
           speak: true
         };
       }
@@ -74,12 +192,20 @@
       this.currentRecipe = recipe;
       this.currentStepIndex = 0;
       CM.ui?.renderRecipe(recipe, 0);
+      CM.ui?.setRecipeStatus("Recipe ready");
 
       // Transition to ingredient preference state — speak the question
       this.state = "AWAITING_INGREDIENT_PREFERENCE";
       console.log(`[CHEFMATE FLOW] Recipe generated: ${recipe.ingredients.length} ingredients, ${recipe.steps.length} steps`);
       console.log('[CHEFMATE FLOW] State changed: -> AWAITING_INGREDIENT_PREFERENCE');
-      const prompt = "I've prepared the recipe. Would you like me to tell you the ingredients and their quantities first?";
+
+      const allQuantitiesUnspecified = recipe.ingredients.length === 0 ||
+        (recipe.ingredients.length === 1 && recipe.ingredients[0].name.includes("shown in video")) ||
+        recipe.ingredients.every(i => !i.quantity_specified);
+
+      const prompt = allQuantitiesUnspecified
+        ? "I've prepared the recipe from the visual instructions in the video. Quantities are not specified on screen. Would you like me to start the cooking instructions?"
+        : "I've prepared the recipe. Would you like me to tell you the ingredients and their quantities first?";
 
       return {
         success: true,
@@ -102,13 +228,17 @@
       console.log('[CHEFMATE FLOW] State changed: -> READING_INGREDIENTS');
       this.state = "READING_INGREDIENTS";
 
-      if (this.currentRecipe.ingredients.length === 0) {
+      const isUnspecifiedOnly = this.currentRecipe.ingredients.length === 0 ||
+        (this.currentRecipe.ingredients.length === 1 && this.currentRecipe.ingredients[0].name.includes("shown in video")) ||
+        this.currentRecipe.ingredients.every(i => !i.quantity_specified && !i.quantity);
+
+      if (isUnspecifiedOnly) {
         this.state = "AWAITING_START_CONFIRMATION";
         console.log('[CHEFMATE FLOW] State changed: -> AWAITING_START_CONFIRMATION');
         return {
           success: true,
           action: "CONFIRM_INGREDIENTS",
-          message: "No separate ingredient list was found in this video. Would you like me to start the cooking instructions?",
+          message: "Ingredients are shown visually in the video without specified quantities. Shall I start the cooking instructions?",
           speak: true
         };
       }
@@ -161,10 +291,15 @@
         CM.youtubeController?.seekTo(step.start_seconds);
       }
 
+      let intro = "Okay, let's start cooking. Step one:";
+      if (this.currentRecipe.prerequisiteNotice) {
+        intro = `${this.currentRecipe.prerequisiteNotice} Okay, let's start cooking. Step one:`;
+      }
+
       return {
         success: true,
         action: "START_COOKING",
-        message: `Okay, let's start cooking. Step one: ${step.instruction}`,
+        message: `${intro} ${step.instruction}`,
         speak: true
       };
     },
@@ -411,6 +546,17 @@
       });
 
       if (match) {
+        if (match.has_conflict || match.quantity_uncertain) {
+          const trans = match.transcript_quantity || "the spoken audio";
+          const vis = match.visual_quantity || "the on-screen text";
+          return {
+            success: true,
+            action: "GET_QUANTITY",
+            message: `The quantity of ${match.name} is uncertain due to a conflict between the video specifying "${trans}" and on-screen text showing "${vis}". Neither value could be confirmed.`,
+            speak: true
+          };
+        }
+
         if (match.quantity_specified && match.quantity) {
           const u = match.unit ? ` ${match.unit}` : "";
           return {
@@ -476,6 +622,15 @@
       });
 
       if (match) {
+        if (match.has_conflict || match.quantity_uncertain) {
+          return {
+            success: true,
+            action: "WAS_QUANTITY_SPECIFIED",
+            message: `The quantity of ${match.name} was not clearly specified due to a conflict between the spoken audio and on-screen text.`,
+            speak: true
+          };
+        }
+
         if (match.quantity_specified && match.quantity) {
           const u = match.unit ? ` ${match.unit}` : "";
           return {

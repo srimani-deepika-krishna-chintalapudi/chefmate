@@ -141,7 +141,7 @@
         }
 
         // If we know video duration and have collected up to the last 30 seconds
-        const highestTime = Math.max(...Array.from(segmentMap.keys()), 0);
+        const highestTime = Math.max(...Array.from(segmentMap.values()).map(s => Number(s.start) || 0), 0);
         if (totalDuration > 60 && highestTime >= totalDuration - 30) {
           break;
         }
