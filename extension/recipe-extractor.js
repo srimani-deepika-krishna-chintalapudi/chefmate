@@ -690,15 +690,229 @@
   }
 
   function reconcileSteps(descSteps, transcriptSteps) {
-    if (transcriptSteps.length > 0) {
-      return transcriptSteps;
+    if (!transcriptSteps || transcriptSteps.length === 0) return descSteps || [];
+    if (!descSteps || descSteps.length === 0) return transcriptSteps || [];
+
+    const merged = [];
+    const usedDescIndices = new Set();
+
+    function getWordOverlap(strA, strB) {
+      if (!strA || !strB) return 0;
+      const getWords = s => s.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(w => w.length > 2);
+      const wordsA = new Set(getWords(strA));
+      const wordsB = new Set(getWords(strB));
+      if (wordsA.size === 0 || wordsB.size === 0) return 0;
+      let matches = 0;
+      for (const w of wordsA) {
+        if (wordsB.has(w)) matches++;
+      }
+      return matches / Math.min(wordsA.size, wordsB.size);
     }
-    return descSteps;
+
+    for (const tStep of transcriptSteps) {
+      let bestIdx = -1;
+      let maxScore = 0;
+
+      for (let i = 0; i < descSteps.length; i++) {
+        if (usedDescIndices.has(i)) continue;
+        const score = getWordOverlap(tStep.instruction, descSteps[i].instruction);
+        if (score > maxScore && score >= 0.40) {
+          maxScore = score;
+          bestIdx = i;
+        }
+      }
+
+      if (bestIdx !== -1) {
+        usedDescIndices.add(bestIdx);
+        const dStep = descSteps[bestIdx];
+        const combinedSources = Array.from(new Set([...(tStep.sources || ["transcript"]), ...(dStep.sources || ["description"])]));
+        merged.push({
+          ...tStep,
+          instruction: dStep.instruction && dStep.instruction.length > 15 ? dStep.instruction : tStep.instruction,
+          duration_seconds: tStep.duration_seconds || dStep.duration_seconds || null,
+          temperature: tStep.temperature || dStep.temperature || null,
+          doneness_cue: tStep.doneness_cue || dStep.doneness_cue || null,
+          sources: combinedSources,
+          confidence: Math.max(tStep.confidence || 0.8, dStep.confidence || 0.8)
+        });
+      } else {
+        merged.push({ ...tStep });
+      }
+    }
+
+    // Preserve complementary description steps not mentioned in transcript
+    for (let i = 0; i < descSteps.length; i++) {
+      if (!usedDescIndices.has(i)) {
+        merged.push({ ...descSteps[i] });
+      }
+    }
+
+    // Re-index step numbers
+    merged.forEach((step, idx) => {
+      step.step_number = idx + 1;
+    });
+
+    return merged;
+  }
+
+  // --- Dedicated Dish Identification & Recipe Consistency Validation ---
+  const knownDishes = [
+    {
+      name: "Biryani",
+      signature: "biryani",
+      keywords: ["biryani", "biriyani", "briyani", "dum biryani", "hyderabadi biryani", "chicken biryani", "mutton biryani", "veg biryani"],
+      dishIngredients: ["basmati", "biryani masala", "saffron", "kewra", "dum", "birista"],
+      incompatibleDishes: ["pulihora", "lemon_rice"]
+    },
+    {
+      name: "Pulihora",
+      signature: "pulihora",
+      keywords: ["pulihora", "puliyodharai", "tamarind rice", "chintapandu", "nimmakaya pulihora", "lemon rice"],
+      dishIngredients: ["tamarind", "tamarind paste", "chintapandu", "mustard seeds", "peanuts", "curry leaves"],
+      incompatibleDishes: ["biryani"]
+    },
+    {
+      name: "Pulao",
+      signature: "pulao",
+      keywords: ["pulao", "pulav", "pilaf", "veg pulao", "peas pulao"],
+      dishIngredients: ["basmati", "whole spices", "peas"],
+      incompatibleDishes: []
+    },
+    {
+      name: "Fried Rice",
+      signature: "fried_rice",
+      keywords: ["fried rice", "schezwan fried rice", "egg fried rice"],
+      dishIngredients: ["soy sauce", "spring onion", "vinegar"],
+      incompatibleDishes: []
+    },
+    {
+      name: "Khichdi",
+      signature: "khichdi",
+      keywords: ["khichdi", "khichuri", "pongal", "ven pongal"],
+      dishIngredients: ["moong dal", "lentils", "cumin", "ghee"],
+      incompatibleDishes: ["biryani"]
+    },
+    {
+      name: "Paratha",
+      signature: "paratha",
+      keywords: ["paratha", "aloo paratha", "roti", "chapati", "naan"],
+      dishIngredients: ["flour", "atta", "dough", "rolling pin"],
+      incompatibleDishes: ["biryani", "pulihora"]
+    },
+    {
+      name: "Dessert Shots",
+      signature: "dessert_shots",
+      keywords: ["dessert shots", "shot glasses", "sabudana shots", "sago dessert"],
+      dishIngredients: ["sabudana", "sago", "cream", "shot glasses"],
+      incompatibleDishes: ["biryani", "pulihora"]
+    }
+  ];
+
+  function identifyDish({ title = "", description = "", segments = [], ocrRecords = [], visualObservations = [] } = {}) {
+    const fullText = [
+      title,
+      description.slice(0, 500),
+      ...(Array.isArray(segments) ? segments.slice(0, 15).map(s => s.text) : []),
+      ...(Array.isArray(ocrRecords) ? ocrRecords.map(r => r.text) : [])
+    ].join(" ").toLowerCase();
+
+    const cleanTitle = (title || "").toLowerCase();
+
+    for (const d of knownDishes) {
+      const titleMatch = d.keywords.some(k => cleanTitle.includes(k));
+      if (titleMatch) {
+        return {
+          dishName: d.name,
+          signature: d.signature,
+          confidence: 0.95,
+          incompatibleDishes: d.incompatibleDishes,
+          source: "title",
+          evidence: `Title contains "${d.name}"`
+        };
+      }
+    }
+
+    for (const d of knownDishes) {
+      const matchCount = d.keywords.filter(k => fullText.includes(k)).length;
+      if (matchCount > 0) {
+        return {
+          dishName: d.name,
+          signature: d.signature,
+          confidence: 0.85,
+          incompatibleDishes: d.incompatibleDishes,
+          source: "context",
+          evidence: `Transcript/OCR matches ${matchCount} keyword(s) for "${d.name}"`
+        };
+      }
+    }
+
+    // Generic extraction from title if pattern matches (e.g. "How to make X" or "X Recipe")
+    const titlePattern = cleanTitle.match(/(?:how to (?:make|cook|prepare)\s+([a-z\s]+?)(?:\s+at home|\s+in\s+\d+|\s+recipe|$)|([a-z\s]+?)\s+recipe)/i);
+    if (titlePattern) {
+      const rawName = (titlePattern[1] || titlePattern[2] || "").trim();
+      if (rawName.length >= 3 && rawName.length <= 35 && !rawName.includes("quick") && !rawName.includes("easy")) {
+        return {
+          dishName: rawName.charAt(0).toUpperCase() + rawName.slice(1),
+          signature: rawName.toLowerCase().replace(/\s+/g, "_"),
+          confidence: 0.75,
+          incompatibleDishes: [],
+          source: "title_pattern",
+          evidence: `Title pattern extracted "${rawName}"`
+        };
+      }
+    }
+
+    return {
+      dishName: "Uncertain",
+      signature: "uncertain",
+      confidence: 0.30,
+      incompatibleDishes: [],
+      source: "unknown",
+      evidence: "No distinct dish name identified"
+    };
+  }
+
+  function validateDishConsistency(dishInfo, recipe) {
+    if (!dishInfo || !recipe || dishInfo.signature === "uncertain") {
+      return { valid: true, dishName: dishInfo?.dishName || "Unknown" };
+    }
+
+    const recipeText = [
+      recipe.video_title || "",
+      recipe.description || "",
+      ...(Array.isArray(recipe.ingredients) ? recipe.ingredients.map(i => i.name) : []),
+      ...(Array.isArray(recipe.steps) ? recipe.steps.map(s => s.instruction) : [])
+    ].join(" ").toLowerCase();
+
+    // Check incompatible dishes
+    for (const incomp of (dishInfo.incompatibleDishes || [])) {
+      const incompDish = knownDishes.find(d => d.signature === incomp);
+      if (incompDish) {
+        const dishTokens = [...incompDish.keywords, ...incompDish.dishIngredients];
+        const signatureHits = dishTokens.filter(k => recipeText.includes(k.toLowerCase())).length;
+        if (signatureHits >= 1) {
+          return {
+            valid: false,
+            dishName: dishInfo.dishName,
+            mismatchedDish: incompDish.name,
+            reason: `Severe dish mismatch: Identified video dish is "${dishInfo.dishName}", but extracted recipe contains signature elements of "${incompDish.name}". Candidate recipe rejected.`
+          };
+        }
+      }
+    }
+
+    return {
+      valid: true,
+      dishName: dishInfo.dishName
+    };
   }
 
   // --- Main Extractor Interface ---
   const recipeExtractor = {
-    extract({ videoId = "", videoTitle = "", videoDuration = 0, description = "", segments = [], ocrRecords = [], visualObservations = [] } = {}) {
+    identifyDish,
+    validateDishConsistency,
+
+    extract({ videoId = "", videoTitle = "", videoDuration = 0, description = "", segments = [], ocrRecords = [], visualObservations = [], visualStats = {} } = {}) {
       const warnings = [];
       const equipment = [];
       const stats = {
@@ -709,7 +923,10 @@
         first_timestamp: segments && segments.length > 0 ? segments[0].start : 0,
         last_timestamp: segments && segments.length > 0 ? segments[segments.length - 1].start : 0,
         video_duration: videoDuration,
-        fully_covered: false
+        fully_covered: false,
+        framesAttempted: visualStats?.framesAttempted || 0,
+        framesCaptured: visualStats?.framesCaptured || 0,
+        timestampsAttempted: visualStats?.timestampsAttempted || []
       };
 
       if (videoDuration > 0 && stats.last_timestamp > 0) {
@@ -717,6 +934,15 @@
       } else if (stats.total_segments > 0) {
         stats.fully_covered = true;
       }
+
+      // Dish identification
+      const dishIdentity = identifyDish({
+        title: videoTitle,
+        description,
+        segments,
+        ocrRecords,
+        visualObservations
+      });
 
       // 1. Ingredients extraction & reconciliation
       const descIngs = parseDescriptionIngredients(description);
@@ -778,15 +1004,31 @@
         warnings.push("No structured cooking steps could be recognized.");
       }
 
+      // Dish consistency check
+      const consistency = validateDishConsistency(dishIdentity, {
+        video_title: videoTitle,
+        description,
+        ingredients: finalIngredients,
+        steps: finalSteps
+      });
+
+      let success = finalSteps.length > 0;
+      if (!consistency.valid) {
+        success = false;
+        warnings.push(consistency.reason);
+        console.warn("[CHEFMATE IDENTITY]", consistency.reason);
+      }
+
       const specifiedCount = finalIngredients.filter(i => i.quantity_specified).length;
       const unspecifiedCount = finalIngredients.length - specifiedCount;
-
-      const success = finalSteps.length > 0;
 
       return {
         success,
         video_id: videoId || "",
         video_title: videoTitle || "Untitled Recipe",
+        dish_identity: dishIdentity,
+        dish_name: dishIdentity.dishName,
+        consistency,
         equipment,
         ingredients: finalIngredients,
         steps: finalSteps,
@@ -1135,7 +1377,9 @@
     _parseDescriptionIngredients: parseDescriptionIngredients,
     _extractStepsFromTranscript: extractStepsFromTranscript,
     _isInstructionalCookingStep: isInstructionalCookingStep,
-    _isStrongNonCookingTitle: isStrongNonCookingTitle
+    _isStrongNonCookingTitle: isStrongNonCookingTitle,
+    _reconcileSteps: reconcileSteps,
+    _reconcileIngredients: reconcileIngredients
   };
 
   CM.recipeExtractor = recipeExtractor;

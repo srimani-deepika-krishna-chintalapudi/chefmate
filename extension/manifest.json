@@ -1,14 +1,17 @@
 {
   "manifest_version": 3,
   "name": "ChefMate — YouTube Cooking Assistant",
-  "version": "0.1.0",
-  "description": "Hands-free YouTube controls and cooking-assistant foundation.",
-  "permissions": ["activeTab"],
+  "version": "0.2.0",
+  "description": "Hands-free YouTube controls, multimodal cooking assistant, and context-aware recipe engine.",
+  "permissions": [
+    "activeTab",
+    "tabs"
+  ],
   "host_permissions": [
-  "https://www.youtube.com/*",
-  "https://youtube.com/*",
-  "http://127.0.0.1:8000/*"
-],
+    "https://www.youtube.com/*",
+    "https://youtube.com/*",
+    "http://127.0.0.1:8000/*"
+  ],
   "content_scripts": [
     {
       "matches": ["https://www.youtube.com/*", "https://youtube.com/*"],
@@ -17,9 +20,11 @@
         "command-parser.js",
         "command-executor.js",
         "youtube-transcript.js",
+        "audio-transcriber.js",
         "visual-extractor.js",
         "recipe-planner.js",
         "recipe-extractor.js",
+        "context-engine.js",
         "voice.js",
         "recipe-ui.js",
         "content.js"

@@ -68,10 +68,13 @@
     }
 
     if (intent === "SET_SPEED") {
+      if (/\b(?:double speed|2x|twice as fast)\b/i.test(text)) return { rate: 2.0 };
+      if (/\b(?:half speed|0\.5x)\b/i.test(text)) return { rate: 0.5 };
+      if (/\b(?:normal speed|1x|normal playback)\b/i.test(text)) return { rate: 1.0 };
       const match = text.match(/\b(0\.5|0\.75|1(?:\.25|\.5|\.75)?|2)\s*x?\b/);
       if (match) return { rate: Number(match[1]) };
-      if (/\b(increase|faster|speed up)\b/i.test(text)) return { rate: 1.25 };
-      if (/\b(decrease|slower|slow down)\b/i.test(text)) return { rate: 0.75 };
+      if (/\b(?:increase|faster|speed up)\b/i.test(text)) return { rate: 1.25 };
+      if (/\b(?:decrease|slower|slow down)\b/i.test(text)) return { rate: 0.75 };
     }
 
     if (intent === "GET_QUANTITY" || intent === "WAS_QUANTITY_SPECIFIED" || intent === "GET_SUGGESTED_QUANTITY") {
@@ -153,10 +156,13 @@
     // 2. High priority cooking step commands when cooking is active
     const isCookingActive = cookingState === "COOKING" || cookingState === "PAUSED";
     if (isCookingActive) {
-      if (/^(next|next step|move on|forward|continue step|go ahead|proceed|what s next|what's next|continue|advance|onwards|carry on)\b/i.test(text) && !/video/i.test(text)) {
+      if (/^(next|next step|move on|continue step|go ahead|proceed|what s next|what's next|continue|advance|onwards|carry on)\b/i.test(text) && !/video/i.test(text)) {
         return result("NEXT_RECIPE_STEP", {}, 1, "context");
       }
-      if (/^(previous|previous step|back|go back|step before|the one before|preceding step)\b/i.test(text) && !/video|second/i.test(text)) {
+      if (/^forward\b/i.test(text) && !/video|second|\d/i.test(text)) {
+        return result("NEXT_RECIPE_STEP", {}, 1, "context");
+      }
+      if (/^(previous|previous step|back|go back|step before|the one before|preceding step)\b/i.test(text) && !/video|second|\d/i.test(text)) {
         return result("PREVIOUS_RECIPE_STEP", {}, 1, "context");
       }
       if (/^(repeat|repeat step|say that again|what did you say|repeat current step|again|one more time|again please|once more)\b/i.test(text)) {
@@ -165,10 +171,10 @@
       if (/^(explain|explain step|what do i do|tell me more|how do i do this)\b/i.test(text)) {
         return result("EXPLAIN_STEP", {}, 1, "context");
       }
-      if (/^(pause|pause cooking|hold on)\b/i.test(text) && !/video/i.test(text)) {
+      if (/^(pause cooking)\b/i.test(text)) {
         return result("PAUSE_COOKING", {}, 1, "context");
       }
-      if (/^(resume|resume cooking|continue cooking)\b/i.test(text) && !/video/i.test(text)) {
+      if (/^(resume cooking|continue cooking)\b/i.test(text)) {
         return result("RESUME_COOKING", {}, 1, "context");
       }
     }
@@ -225,7 +231,10 @@
     if (/\b(restart recipe|start over)\b/i.test(text)) {
       return result("RESTART_RECIPE", {}, 1, "rule");
     }
-    if (/\b(stop cooking|exit cooking|finish recipe)\b/i.test(text)) {
+    if (/\b(exit cooking|leave cooking|quit cooking)\b/i.test(text)) {
+      return result("EXIT_COOKING", {}, 1, "rule");
+    }
+    if (/\b(stop cooking|finish recipe)\b/i.test(text)) {
       return result("STOP_COOKING", {}, 1, "rule");
     }
 
@@ -257,6 +266,8 @@
       ["PREVIOUS_VIDEO", /(previous video|go to previous video)/],
       ["SEEK_BACKWARD", /(go |move |skip |seek )?(back|rewind)/],
       ["SEEK_FORWARD", /(go |move |skip |seek |fast )?(forward|ahead)/],
+      ["SCROLL_TOP", /scroll( to| all the way to)? (the )?top|go to (the )?top/i],
+      ["SCROLL_BOTTOM", /scroll( to| all the way to)? (the )?bottom|go to (the )?bottom/i],
       ["SCROLL_UP", /scroll( the page)? up|go up|move up/],
       ["SCROLL_DOWN", /scroll( the page)? down|go down|move down/],
       ["UNMUTE", /unmute|turn sound on/],
@@ -267,14 +278,19 @@
       ["REPLAY", /replay|play again|start again/],
       ["TOGGLE_PLAY", /play pause|toggle/],
       ["PAUSE", /pause( the video)?|stop the video/],
-      ["PLAY", /play( the video| it)?|resume video|continue video/]
+      ["PLAY", /play( the video| it)?|resume video|continue video/],
+      ["HELP", /\b(help|what can i say|options|commands)\b/i],
+      ["CANCEL", /\b(cancel|nevermind|dismiss)\b/i]
     ];
 
-    if (/speed|\d(?:\.\d+)?x/.test(text)) {
+    if (/speed|\d(?:\.\d+)?x|faster|slower/.test(text)) {
+      if (/\b(?:double speed|2x|twice as fast)\b/i.test(text)) return result("SET_SPEED", { rate: 2.0 });
+      if (/\b(?:half speed|0\.5x)\b/i.test(text)) return result("SET_SPEED", { rate: 0.5 });
+      if (/\b(?:normal speed|1x|normal playback)\b/i.test(text)) return result("SET_SPEED", { rate: 1.0 });
       const match = text.match(/\b(0\.5|0\.75|1(?:\.25|\.5|\.75)?|2)\s*x?\b/);
       if (match) return result("SET_SPEED", { rate: Number(match[1]) });
-      if (/\b(increase|faster|speed up)\b/.test(text)) return result("SET_SPEED", { rate: 1.25 });
-      if (/\b(decrease|slower|slow down)\b/.test(text)) return result("SET_SPEED", { rate: 0.75 });
+      if (/\b(increase|faster|speed up)\b/i.test(text)) return result("SET_SPEED", { rate: 1.25 });
+      if (/\b(decrease|slower|slow down)\b/i.test(text)) return result("SET_SPEED", { rate: 0.75 });
     }
 
     const matchedPattern = patterns.find(([, pat]) => pat.test(text));
@@ -356,8 +372,12 @@
       };
 
       const finalResult = await runParse();
-      console.log(`[CHEFMATE FLOW] Command recognized: "${text}" -> intent=${finalResult.intent} | state=${cookingState} | method=${finalResult.method} | params=`, finalResult.parameters);
-      return finalResult;
+      const processed = CM.contextEngine?.process
+        ? CM.contextEngine.process(text, finalResult, cookingState).resolvedCommand
+        : finalResult;
+
+      console.log(`[CHEFMATE FLOW] Command recognized: "${text}" -> intent=${processed.intent} | state=${cookingState} | method=${processed.method} | params=`, processed.parameters);
+      return processed;
     },
 
     _parseContextAware: parseContextAware,

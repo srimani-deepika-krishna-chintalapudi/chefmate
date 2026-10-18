@@ -178,8 +178,14 @@
       debugBox.id = "cm-debug-drawer";
       debugBox.hidden = true;
       debugBox.innerHTML = `
+        <div>Build: <span id="cm-dbg-build">2026.10.18-v3-audit-fix</span></div>
+        <div>Dish: <span id="cm-dbg-dish">—</span></div>
+        <div>Consistency: <span id="cm-dbg-consistency">—</span></div>
         <div>State: <span id="cm-dbg-state">IDLE</span></div>
+        <div>API Health: <span id="cm-dbg-api-health">Checking…</span></div>
+        <div>Frames (Att/Cap): <span id="cm-dbg-frames">0 / 0</span></div>
         <div>Transcript: <span id="cm-dbg-src-transcript">Unavailable</span></div>
+        <div>Audio STT: <span id="cm-dbg-src-audio">Unavailable</span></div>
         <div>OCR: <span id="cm-dbg-src-ocr">Unavailable</span></div>
         <div>Vision: <span id="cm-dbg-src-vision">Unavailable</span></div>
         <div>Metadata: <span id="cm-dbg-src-metadata">Unavailable</span></div>
@@ -188,6 +194,7 @@
         <div>Timestamps: <span id="cm-dbg-timestamps">0s - 0s</span></div>
         <div>Equip Filtered: <span id="cm-dbg-eq-filtered">0</span></div>
         <div>Mic: <span id="cm-dbg-mic">NOT CONNECTED</span></div>
+        <div>TTS State: <span id="cm-dbg-tts-state">IDLE</span></div>
         <div>Speech: <span id="cm-dbg-rec">STOPPED</span></div>
         <div>Intent: <span id="cm-dbg-intent">—</span></div>
       `;
@@ -467,6 +474,7 @@
 
     sourceStatuses: {
       transcript: "Unavailable",
+      audio: "Unavailable",
       ocr: "Unavailable",
       vision: "Unavailable",
       metadata: "Unavailable"
@@ -476,11 +484,13 @@
       if (!statuses) return;
       this.sourceStatuses = { ...this.sourceStatuses, ...statuses };
       const trNode = this.panel?.querySelector("#cm-dbg-src-transcript");
+      const audNode = this.panel?.querySelector("#cm-dbg-src-audio");
       const ocrNode = this.panel?.querySelector("#cm-dbg-src-ocr");
       const visNode = this.panel?.querySelector("#cm-dbg-src-vision");
       const metaNode = this.panel?.querySelector("#cm-dbg-src-metadata");
 
       if (trNode && this.sourceStatuses.transcript) trNode.textContent = this.sourceStatuses.transcript;
+      if (audNode && this.sourceStatuses.audio) audNode.textContent = this.sourceStatuses.audio;
       if (ocrNode && this.sourceStatuses.ocr) ocrNode.textContent = this.sourceStatuses.ocr;
       if (visNode && this.sourceStatuses.vision) visNode.textContent = this.sourceStatuses.vision;
       if (metaNode && this.sourceStatuses.metadata) metaNode.textContent = this.sourceStatuses.metadata;
@@ -493,21 +503,57 @@
       const segNode = this.panel?.querySelector("#cm-dbg-segments");
       const tsNode = this.panel?.querySelector("#cm-dbg-timestamps");
       const eqNode = this.panel?.querySelector("#cm-dbg-eq-filtered");
+      const dishNode = this.panel?.querySelector("#cm-dbg-dish");
+      const consNode = this.panel?.querySelector("#cm-dbg-consistency");
+      const ttsNode = this.panel?.querySelector("#cm-dbg-tts-state");
 
       if (stateNode) stateNode.textContent = CM.assistant?.state || "IDLE";
       if (micNode) micNode.textContent = CM.voice?.stream?.active ? "CONNECTED" : "NOT CONNECTED";
+      if (ttsNode) ttsNode.textContent = CM.voice?.ttsState || "IDLE";
+
+      const currentRecipe = CM.assistant?.currentRecipe;
+      if (dishNode) dishNode.textContent = currentRecipe?.dish_name || "—";
+      if (consNode) {
+        consNode.textContent = currentRecipe?.consistency?.valid ? "VALID" : (currentRecipe ? "MISMATCH" : "—");
+      }
 
       const trNode = this.panel?.querySelector("#cm-dbg-src-transcript");
+      const audNode = this.panel?.querySelector("#cm-dbg-src-audio");
       const ocrNode = this.panel?.querySelector("#cm-dbg-src-ocr");
       const visNode = this.panel?.querySelector("#cm-dbg-src-vision");
       const metaNode = this.panel?.querySelector("#cm-dbg-src-metadata");
 
       if (trNode && this.sourceStatuses?.transcript) trNode.textContent = this.sourceStatuses.transcript;
+      if (audNode && this.sourceStatuses?.audio) audNode.textContent = this.sourceStatuses.audio;
       if (ocrNode && this.sourceStatuses?.ocr) ocrNode.textContent = this.sourceStatuses.ocr;
       if (visNode && this.sourceStatuses?.vision) visNode.textContent = this.sourceStatuses.vision;
       if (metaNode && this.sourceStatuses?.metadata) metaNode.textContent = this.sourceStatuses.metadata;
 
-      const stats = CM.assistant?.currentRecipe?.stats;
+      const framesNode = this.panel?.querySelector("#cm-dbg-frames");
+      const apiNode = this.panel?.querySelector("#cm-dbg-api-health");
+
+      if (framesNode) {
+        const att = currentRecipe?.stats?.framesAttempted ?? currentRecipe?.framesAttempted ?? 0;
+        const cap = currentRecipe?.stats?.framesCaptured ?? currentRecipe?.framesCaptured ?? 0;
+        framesNode.textContent = `${att} / ${cap}`;
+      }
+
+      if (apiNode && (!this._lastApiCheck || Date.now() - this._lastApiCheck > 10000)) {
+        this._lastApiCheck = Date.now();
+        if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+          try {
+            chrome.runtime.sendMessage({ type: "CHEFMATE_CHECK_HEALTH" }, res => {
+              if (apiNode) apiNode.textContent = (res && res.success) ? "ONLINE" : "OFFLINE (Local Mode)";
+            });
+          } catch (_) {
+            if (apiNode) apiNode.textContent = "OFFLINE (Local Mode)";
+          }
+        } else {
+          apiNode.textContent = "STANDALONE";
+        }
+      }
+
+      const stats = currentRecipe?.stats;
       if (stats) {
         if (covNode) covNode.textContent = stats.fully_covered ? "100% COMPLETE" : "PARTIAL";
         if (segNode) segNode.textContent = `${stats.total_segments || 0}`;
@@ -516,4 +562,6 @@
       }
     }
   };
+
+  console.log("[CHEFMATE] Initialized ChefMate Build 2026.10.18-v3-audit-fix");
 })();

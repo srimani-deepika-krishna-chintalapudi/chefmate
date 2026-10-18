@@ -14,9 +14,20 @@
 
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  let lastLoadedVideoId = "";
+
   async function openTranscriptPanel() {
-    // 1. Check if segments already exist
-    if (document.querySelectorAll("ytd-transcript-segment-renderer").length > 0) {
+    const currentVideoId = CM.youtubeController?.getVideoId() || "";
+    const isNewVideo = Boolean(currentVideoId && currentVideoId !== lastLoadedVideoId);
+
+    if (isNewVideo) {
+      lastLoadedVideoId = currentVideoId;
+      const closeBtn = document.querySelector("#visibility-button button, ytd-transcript-search-panel-renderer button[aria-label*='Close' i]");
+      if (closeBtn) {
+        try { closeBtn.click(); } catch (_) {}
+        await delay(250);
+      }
+    } else if (document.querySelectorAll("ytd-transcript-segment-renderer").length > 0) {
       return true;
     }
 

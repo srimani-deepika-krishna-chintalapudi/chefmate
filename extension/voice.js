@@ -164,6 +164,7 @@
       // 700 ms: let speaker echo decay before listening again
       this.muteTimer = setTimeout(() => {
         this.isMuted = false;
+        this.ttsState = 'IDLE';
         if (this.shouldListen) {
           this.setState(states.LISTENING, '🟢 Listening…');
           console.log('[CHEFMATE FLOW] Resuming speech recognition after TTS echo delay');
@@ -238,6 +239,7 @@
     },
 
     // ─── Text-to-Speech ───────────────────────────────────────────────────────
+    ttsState: 'IDLE', // IDLE, SPEAKING, CANCELLING, RECOVERING
 
     speak(text) {
       if (!text || typeof window.speechSynthesis === 'undefined') return;
@@ -247,6 +249,7 @@
       this.lastSpokenText = text;
       this.isSpeaking = true;
       this.isMuted = false;
+      this.ttsState = 'SPEAKING';
       clearTimeout(this.muteTimer);
       clearTimeout(this.ttsWatchdogTimer);
       this.setState(states.SPEAKING, '🔊 ChefMate Speaking…');
@@ -278,32 +281,44 @@
       }
 
       utterance.onstart = () => {
-        console.log('[CHEFMATE FLOW] TTS utterance playback started');
+        if (this.currentUtterance === utterance) {
+          this.ttsState = 'SPEAKING';
+          console.log('[CHEFMATE FLOW] TTS utterance playback started');
+        }
       };
 
       utterance.onend = () => {
+        if (this.currentUtterance !== utterance) return;
         console.log('[CHEFMATE FLOW] TTS utterance playback ended');
+        this.ttsState = 'RECOVERING';
         this._resumeRecognitionAfterTTS();
       };
 
-      // Always resume recognition on any error
+      // Differentiate intentional cancellation from real speech errors
       utterance.onerror = (e) => {
+        if (this.currentUtterance !== utterance) return;
+        if (e.error === 'interrupted' || e.error === 'canceled') {
+          console.log('[CHEFMATE FLOW] TTS utterance superseded or cancelled cleanly:', e.error);
+          return;
+        }
         console.warn('[CHEFMATE FLOW] TTS utterance error:', e.error);
+        this.ttsState = 'RECOVERING';
         this._resumeRecognitionAfterTTS();
       };
 
       // Watchdog timer: resume recognition if Chrome speech hangs
       const estDurationMs = Math.max(6000, Math.ceil(text.length * 100));
       this.ttsWatchdogTimer = setTimeout(() => {
-        if (this.isSpeaking) {
+        if (this.isSpeaking && this.currentUtterance === utterance) {
           console.warn('[CHEFMATE FLOW] TTS watchdog expired after', estDurationMs, 'ms. Resuming recognition.');
+          this.ttsState = 'RECOVERING';
           this._resumeRecognitionAfterTTS();
         }
       }, estDurationMs + 4000);
 
       // Periodic resume ticker to unfreeze Chrome synthesis if paused
       const resumeTicker = setInterval(() => {
-        if (!this.isSpeaking) {
+        if (!this.isSpeaking || this.currentUtterance !== utterance) {
           clearInterval(resumeTicker);
         } else if (window.speechSynthesis.paused) {
           window.speechSynthesis.resume();
@@ -318,11 +333,13 @@
           window.speechSynthesis.speak(utterance);
         } catch (e) {
           console.warn('[CHEFMATE FLOW] Error speaking:', e);
+          this.ttsState = 'RECOVERING';
           this._resumeRecognitionAfterTTS();
         }
       };
 
       if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+        this.ttsState = 'CANCELLING';
         window.speechSynthesis.cancel();
         setTimeout(doSpeak, 120);
       } else {
@@ -336,6 +353,7 @@
       this.currentUtterance = null;
       this.isMuted = false;
       this.isSpeaking = false;
+      this.ttsState = 'IDLE';
       if (typeof window.speechSynthesis !== 'undefined') {
         try { window.speechSynthesis.cancel(); } catch (_) {}
       }

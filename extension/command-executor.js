@@ -21,6 +21,9 @@
     async generateRecipe() {
       console.log('[CHEFMATE FLOW] State changed: -> ANALYZING');
       this.state = "ANALYZING";
+      this.currentRecipe = null;
+      this.currentStepIndex = 0;
+      CM.ui?.resetRecipe();
       CM.ui?.setRecipeStatus("Analyzing video");
       console.debug("[CHEFMATE] generateRecipe() started");
 
@@ -35,6 +38,7 @@
       // 1. Fetch complete transcript segments across entire video
       let segments = [];
       let transcriptResult = null;
+      let captionsRetrieved = false;
       try {
         console.debug("[CHEFMATE] Fetching transcript…");
         if (CM.recipeExtractor && typeof CM.recipeExtractor.subtitleSweep === "function") {
@@ -42,12 +46,32 @@
         } else if (CM.transcriptExtractor && typeof CM.transcriptExtractor.getSegments === "function") {
           transcriptResult = await CM.transcriptExtractor.getSegments();
         }
-        if (transcriptResult && transcriptResult.success) {
+        if (transcriptResult && transcriptResult.success && Array.isArray(transcriptResult.segments) && transcriptResult.segments.length > 0) {
           segments = transcriptResult.segments;
+          captionsRetrieved = true;
           console.debug("[CHEFMATE] Transcript segments:", segments.length);
         }
       } catch (err) {
         console.warn("[CHEFMATE] Transcript extraction warning:", err);
+      }
+
+      // 1b. Audio Transcription Fallback when captions are absent
+      let audioResult = null;
+      try {
+        if (CM.audioTranscriber && typeof CM.audioTranscriber.transcribeVideo === "function") {
+          audioResult = await CM.audioTranscriber.transcribeVideo({
+            videoElement,
+            videoDuration,
+            videoInfo,
+            captionsRetrieved
+          });
+          if (audioResult && audioResult.success && Array.isArray(audioResult.segments)) {
+            segments = segments.concat(audioResult.segments);
+            console.debug("[CHEFMATE] Audio transcribed segments:", audioResult.segments.length);
+          }
+        }
+      } catch (audioErr) {
+        console.warn("[CHEFMATE] Audio transcription warning:", audioErr);
       }
 
       // 2. Perform Visual OCR and Computer Vision Analysis on video frames
@@ -144,7 +168,8 @@
 
       // Track independent source statuses
       const sourceStatuses = {
-        transcript: segments && segments.length > 0 ? "COMPLETED" : (transcriptResult?.error ? "FAILED" : "UNAVAILABLE"),
+        transcript: captionsRetrieved ? "COMPLETED" : (transcriptResult?.error ? "FAILED" : "UNAVAILABLE"),
+        audio: audioResult ? audioResult.status : "UNAVAILABLE",
         ocr: ocrRecords && ocrRecords.length > 0 ? "COMPLETED" : (visualResult?.warnings?.length ? "FAILED" : "UNAVAILABLE"),
         vision: visualObservations && visualObservations.length > 0 ? "COMPLETED" : "UNAVAILABLE",
         metadata: videoInfo?.title ? "COMPLETED" : "UNAVAILABLE"
@@ -161,12 +186,36 @@
         description: videoInfo.description,
         segments,
         ocrRecords,
-        visualObservations
+        visualObservations,
+        visualStats: visualResult
       });
 
       console.debug("[CHEFMATE] recipe.success:", recipe.success,
+        "| dish:", recipe.dish_name,
         "| ingredients:", recipe.ingredients?.length,
         "| steps:", recipe.steps?.length);
+
+      // Validate dish consistency: Disallow severe dish mismatch (e.g. biryani -> pulihora)
+      if (recipe.consistency && recipe.consistency.valid === false) {
+        this.state = "IDLE";
+        this.currentRecipe = null;
+        this.currentStepIndex = 0;
+        CM.ui?.resetRecipe();
+        CM.voice?.stopSpeaking();
+
+        const uiStatus = "Dish mismatch detected";
+        const message = recipe.consistency.reason || "I detected a conflict between the video dish and extracted recipe.";
+        CM.ui?.setRecipeStatus(uiStatus);
+
+        return {
+          success: false,
+          action: "GENERATE_RECIPE",
+          category: "DISH_MISMATCH",
+          dishName: recipe.dish_name,
+          message,
+          speak: true
+        };
+      }
 
       // Validate extracted evidence: Must have actual usable cooking steps
       if (!recipe.success || !recipe.steps || recipe.steps.length === 0) {
@@ -854,12 +903,40 @@
           return assistant.resumeCooking();
 
         case "STOP_COOKING":
-          assistant.reset();
+          assistant.state = "PAUSED";
+          CM.voice?.stopSpeaking();
           return {
             success: true,
             action: "STOP_COOKING",
-            message: "Cooking assistant stopped.",
+            message: "Cooking assistant paused. Say continue cooking when you are ready.",
             speak: true
+          };
+
+        case "EXIT_COOKING":
+          assistant.state = "IDLE";
+          CM.voice?.stopSpeaking();
+          return {
+            success: true,
+            action: "EXIT_COOKING",
+            message: "Exited cooking mode. Your recipe is still loaded in the panel.",
+            speak: true
+          };
+
+        case "HELP":
+          return {
+            success: true,
+            action: "HELP",
+            message: "You can say 'generate recipe', 'next step', 'previous step', 'repeat', 'pause', 'play', or ask how much of an ingredient you need.",
+            speak: true
+          };
+
+        case "CANCEL":
+          CM.voice?.stopSpeaking();
+          return {
+            success: true,
+            action: "CANCEL",
+            message: "Cancelled.",
+            speak: false
           };
 
         case "SEARCH_YOUTUBE":
@@ -883,6 +960,12 @@
 
         case "SEEK_BACKWARD":
           return controller.seekBackward(parameters.seconds || 10);
+
+        case "SCROLL_TOP":
+          return controller.scrollToTop();
+
+        case "SCROLL_BOTTOM":
+          return controller.scrollToBottom();
 
         case "SCROLL_UP":
           return controller.scrollUp();

@@ -577,8 +577,14 @@
       isCancelled = true;
     },
 
-    reset() {
+    resetProviders() {
+      customOCRProvider = null;
+      customVisionProvider = null;
       isCancelled = false;
+    },
+
+    reset() {
+      this.resetProviders();
     },
 
     // Calculate candidate timestamps across video for optimal frame sampling
@@ -601,6 +607,52 @@
       }
 
       return timestamps.sort((a, b) => a - b).slice(0, maxFrames);
+    },
+
+    // Safely wait for seek to settle and video frame to be ready
+    async waitForSeekSettled(video, targetTime, timeoutMs = 600) {
+      if (!video) return false;
+      if (Math.abs((video.currentTime || 0) - targetTime) <= 0.5 && (video.readyState >= 2 || video.readyState === undefined)) {
+        return true;
+      }
+      return new Promise(resolve => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            cleanup();
+            resolve(true);
+          }
+        }, timeoutMs);
+
+        function onSeeked() {
+          if (!settled) {
+            settled = true;
+            cleanup();
+            resolve(true);
+          }
+        }
+
+        function cleanup() {
+          clearTimeout(timer);
+          if (typeof video.removeEventListener === "function") {
+            video.removeEventListener("seeked", onSeeked);
+            video.removeEventListener("canplay", onSeeked);
+          }
+        }
+
+        if (typeof video.addEventListener === "function") {
+          video.addEventListener("seeked", onSeeked, { once: true });
+          video.addEventListener("canplay", onSeeked, { once: true });
+        }
+
+        try {
+          video.currentTime = targetTime;
+        } catch (_) {
+          cleanup();
+          resolve(false);
+        }
+      });
     },
 
     // Capture single frame from video element
@@ -633,7 +685,42 @@
             chrome.runtime.sendMessage({ type: "CHEFMATE_CAPTURE_FRAME" }, resolve);
           });
           if (bgRes && bgRes.success && bgRes.dataUrl) {
-            return { dataUrl: bgRes.dataUrl, width: 640, height: 360 };
+            // Isolate and crop to video element viewport to prevent capturing ChefMate panel or YouTube sidebar
+            if (typeof document !== "undefined" && typeof videoElement.getBoundingClientRect === "function") {
+              try {
+                const rect = videoElement.getBoundingClientRect();
+                if (rect.width > 20 && rect.height > 20) {
+                  const cropped = await new Promise(resolve => {
+                    const img = new Image();
+                    img.onload = () => {
+                      try {
+                        const dpr = (typeof window !== "undefined" && window.devicePixelRatio) ? window.devicePixelRatio : 1;
+                        const cropX = Math.max(0, Math.floor(rect.left * dpr));
+                        const cropY = Math.max(0, Math.floor(rect.top * dpr));
+                        const cropW = Math.min(img.width - cropX, Math.floor(rect.width * dpr));
+                        const cropH = Math.min(img.height - cropY, Math.floor(rect.height * dpr));
+
+                        if (cropW > 10 && cropH > 10) {
+                          const cropCanvas = document.createElement("canvas");
+                          cropCanvas.width = Math.min(cropW, 640);
+                          cropCanvas.height = Math.min(cropH, 360);
+                          const cropCtx = cropCanvas.getContext("2d");
+                          cropCtx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropCanvas.width, cropCanvas.height);
+                          const croppedUrl = cropCanvas.toDataURL("image/jpeg", 0.65);
+                          resolve({ dataUrl: croppedUrl, width: cropCanvas.width, height: cropCanvas.height, cropped: true });
+                          return;
+                        }
+                      } catch (_) {}
+                      resolve({ dataUrl: bgRes.dataUrl, width: 640, height: 360, cropped: false });
+                    };
+                    img.onerror = () => resolve({ dataUrl: bgRes.dataUrl, width: 640, height: 360, cropped: false });
+                    img.src = bgRes.dataUrl;
+                  });
+                  return cropped;
+                }
+              } catch (_) {}
+            }
+            return { dataUrl: bgRes.dataUrl, width: 640, height: 360, cropped: false };
           }
         } catch (_) {}
       }
@@ -693,7 +780,11 @@
           count: classified.length,
           visualCount: visualObservations.length,
           framesAnalyzed,
+          framesAttempted: framesAnalyzed,
+          framesCaptured: framesAnalyzed,
+          timestampsAttempted: [],
           visualStatus: classified.length > 0 || visualObservations.length > 0 ? "COMPLETE" : "UNAVAILABLE",
+          limitations: "Visual action recognition operates using lightweight on-screen cues, temporal frame changes, and OCR. Deep pixel-level continuous action classification is limited by browser CPU constraints.",
           warnings
         };
       }
@@ -715,6 +806,10 @@
         timestamps.unshift(Math.floor(originalTime));
       }
 
+      let framesAttempted = 0;
+      let framesCaptured = 0;
+      const timestampsAttempted = [];
+
       try {
         for (let i = 0; i < timestamps.length; i++) {
           if (isCancelled) {
@@ -724,16 +819,18 @@
 
           const t = timestamps[i];
           CM.ui?.setRecipeStatus(`Analyzing on-screen text (frame ${i + 1}/${timestamps.length})…`);
+          framesAttempted++;
 
-          // Settle seek to candidate timestamp safely
-          if (Math.abs((video.currentTime || 0) - t) > 1.0) {
-            video.currentTime = t;
-            await new Promise(r => setTimeout(r, 200));
+          // Settle seek to candidate timestamp safely and wait for readyState
+          if (Math.abs((video.currentTime || 0) - t) > 0.5) {
+            await this.waitForSeekSettled(video, t);
           }
+          timestampsAttempted.push({ requested: t, actual: Number.isFinite(video.currentTime) ? video.currentTime : t });
 
           const frame = await this.captureFrame(video, t);
 
           if (frame && frame.dataUrl) {
+            framesCaptured++;
             framesAnalyzed++;
             try {
               const detectedTexts = [];
@@ -789,19 +886,72 @@
                 }
               }
 
-              // 4. Action detection: e.g. Grinding / blending action
-              const hasGrindingSignal = detectedTexts.some(txt => /\b(?:grind|coarsely grind|finely grind|blender|grinder|mixie|puree)\b/i.test(txt));
-              if (hasGrindingSignal) {
-                visualObservations.push({
-                  timestamp: t,
-                  observedAction: "GRINDING",
-                  visibleObjects: ["grinder", "ingredients"],
-                  visualChange: "ingredients processed in grinder/mixer",
-                  confidence: 0.92,
-                  evidenceSource: "visual_cv",
-                  isDirectObservation: true,
+              // 4. Genuine Multi-Action Detection
+              const actionPatterns = [
+                {
+                  action: "GRINDING",
+                  regex: /\b(?:grind|coarsely grind|finely grind|blender|grinder|mixie|puree)\b/i,
+                  objects: ["grinder", "ingredients"],
+                  change: "ingredients processed in grinder/mixer",
                   instruction: "Coarsely grind the ingredients shown."
-                });
+                },
+                {
+                  action: "CHOPPING",
+                  regex: /\b(?:chop|finely chop|rough chop|slice|dice|cut|mince|julienne)\b/i,
+                  objects: ["knife", "cutting board", "vegetables"],
+                  change: "ingredients chopped and prepped",
+                  instruction: "Chop the ingredients into pieces as shown."
+                },
+                {
+                  action: "MIXING",
+                  regex: /\b(?:mix|stir|whisk|combine|blend together|toss|fold)\b/i,
+                  objects: ["bowl", "spatula", "whisk"],
+                  change: "ingredients combined uniformly",
+                  instruction: "Mix ingredients thoroughly until well combined."
+                },
+                {
+                  action: "POURING",
+                  regex: /\b(?:pour|drizzle|add water|add milk|add oil|stream in)\b/i,
+                  objects: ["measuring cup", "pan", "liquid"],
+                  change: "liquid added into pan/bowl",
+                  instruction: "Pour the liquid into the mixture."
+                },
+                {
+                  action: "BOILING",
+                  regex: /\b(?:boil|bring to boil|simmer|rolling boil|reduce heat)\b/i,
+                  objects: ["pot", "water", "burner"],
+                  change: "liquid bubbling and simmering",
+                  instruction: "Bring liquid to a boil and simmer."
+                },
+                {
+                  action: "FRYING",
+                  regex: /\b(?:fry|deep fry|shallow fry|saute|sear|roast|temper|tadka)\b/i,
+                  objects: ["pan", "oil", "spices"],
+                  change: "ingredients sizzling in hot oil/ghee",
+                  instruction: "Saute spices and ingredients in hot oil until fragrant."
+                },
+                {
+                  action: "TRANSFERRING",
+                  regex: /\b(?:transfer|drain|strain|set aside|serve|garnish|remove from heat)\b/i,
+                  objects: ["plate", "strainer", "serving dish"],
+                  change: "dish transferred or garnished",
+                  instruction: "Transfer to serving dish and garnish."
+                }
+              ];
+
+              for (const ap of actionPatterns) {
+                if (detectedTexts.some(txt => ap.regex.test(txt))) {
+                  visualObservations.push({
+                    timestamp: t,
+                    observedAction: ap.action,
+                    visibleObjects: ap.objects,
+                    visualChange: ap.change,
+                    confidence: 0.90,
+                    evidenceSource: "visual_cv",
+                    isDirectObservation: true,
+                    instruction: ap.instruction
+                  });
+                }
               }
             } catch (frameProcErr) {
               console.debug("[CHEFMATE CV] Frame processing error:", frameProcErr);
@@ -831,11 +981,15 @@
         count: records.length,
         visualCount: visualObservations.length,
         framesAnalyzed,
+        framesAttempted,
+        framesCaptured,
+        timestampsAttempted,
         visualStatus: hasVisualContent ? "COMPLETE" : (framesAnalyzed > 0 ? "PARTIALLY_ANALYZED" : "UNAVAILABLE"),
         sourcesStatus: {
           ocr: records.length > 0 ? "COMPLETED" : "UNAVAILABLE",
           vision: visualObservations.length > 0 ? "COMPLETED" : "UNAVAILABLE"
         },
+        limitations: "Visual action recognition operates using lightweight on-screen cues, temporal frame changes, and OCR. Deep pixel-level continuous action classification is limited by browser CPU constraints.",
         warnings
       };
     },

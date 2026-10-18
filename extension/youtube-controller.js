@@ -1,6 +1,6 @@
 
 (() => {
-  const CM = (window.ChefMate = window.ChefMate || {});
+  const CM = (typeof window !== "undefined" ? (window.ChefMate = window.ChefMate || {}) : {});
 
   const ok = (action, message) => {
     console.debug('[YOUTUBE] Action:', action, message);
@@ -98,6 +98,16 @@
     scrollDown() {
       window.scrollBy({ top: 600, behavior: 'smooth' });
       return ok('SCROLL_DOWN', 'YouTube page scrolled down.');
+    },
+
+    scrollToTop() {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return ok('SCROLL_TOP', 'Scrolled to top of YouTube page.');
+    },
+
+    scrollToBottom() {
+      window.scrollTo({ top: document.body?.scrollHeight || 99999, behavior: 'smooth' });
+      return ok('SCROLL_BOTTOM', 'Scrolled to bottom of YouTube page.');
     },
 
     setVolume(value) {
@@ -383,4 +393,8 @@
       };
     }
   };
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = CM.youtubeController;
+  }
 })();
